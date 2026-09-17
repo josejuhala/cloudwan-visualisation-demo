@@ -1,0 +1,52 @@
+{
+  "version": "2021.12",
+  "core-network-configuration": {
+    "vpn-ecmp-support": true,
+    "asn-ranges": ["64512-65534"],
+    "edge-locations": [
+      { "location": "eu-west-1", "asn": 64512 }
+    ]
+  },
+  "segments": [
+    {
+      "name": "production",
+      "description": "Production workloads. Isolated from development.",
+      "require-attachment-acceptance": true,
+      "isolate-attachments": true,
+      "edge-locations": ["eu-west-1"]
+    },
+    {
+      "name": "development",
+      "description": "Development and test workloads. Isolated from production.",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": true,
+      "edge-locations": ["eu-west-1"]
+    }
+  ],
+  "segment-actions": [],
+  "attachment-policies": [
+    {
+      "rule-number": 100,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "prod" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "production",
+        "require-acceptance-tag-value": "true"
+      }
+    },
+    {
+      "rule-number": 200,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "dev" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "development"
+      }
+    }
+  ]
+}

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<!--
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+  Licensed under the Apache License, Version 2.0 (the "License").
+  You may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AWS Cloud WAN Core Network Policy Visualizer</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!--
+    NATIVE-APP BUILD: Cytoscape.js 3.30.2 is VENDORED locally (vendor/cytoscape.min.js)
+    instead of loaded from cdnjs. The vendored file is byte-identical to the pinned
+    CDN version -- its SHA-384 was verified against the SRI hash used by the web build
+    (sha384-IWROdLKRsN1UuJywMlWl7/blXQ8GEooN2n7dzTxfEPd7ybYIKCUJ2Ol/1Gpf3YV4).
+    Serving it locally means the packaged .app makes ZERO network requests. SRI is
+    dropped here because there is no cross-origin fetch to guard; integrity is
+    instead guaranteed at build time by the verified vendored copy.
+  -->
+  <script src="vendor/cytoscape.min.js"></script>
+</head>
+<!--
+  The whole UI is driven by ONE state: body[data-mode], set by setMode() in
+  app.js. It is "landing" on launch, then "offline" or "live" once the user
+  chooses. CSS keys off this attribute to show/hide the landing screen, the app
+  shell, and the two mode-scoped control groups (see style.css, "MODE ROUTING").
+  Starting in landing means no graph chrome or control clutter is visible until
+  a mode is picked.
+-->
+<body data-mode="landing">
+
+  <!--
+    LANDING SCREEN: the only thing visible on launch. Two clear choices. The
+    "Live view" card is disabled unless the Tauri API is present (native app);
+    app.js sets body[data-tauri] which CSS uses to grey it out in a plain
+    browser, so the web build only offers Offline.
+  -->
+  <section id="landing">
+    <div id="landing-inner">
+      <h1>Cloud WAN Policy Visualizer</h1>
+      <p class="landing-sub">Choose how you want to explore your Cloud WAN.</p>
+      <div id="landing-choices">
+        <button id="choose-offline" type="button" class="landing-card">
+          <span class="landing-card-title">Offline policy view</span>
+          <span class="landing-card-desc">
+            Work from a policy document &mdash; load the built-in example,
+            open a local <code>.json</code> file, or paste JSON. Nothing leaves
+            your machine.
+          </span>
+        </button>
+        <button id="choose-live" type="button" class="landing-card">
+          <span class="landing-card-title">Live view</span>
+          <span class="landing-card-desc">
+            Read live state from AWS Network Manager (deployed policy + routes)
+            using a read-only AWS CLI profile.
+          </span>
+          <span class="landing-card-note">Native app only</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!--
+    APP SHELL: everything below is hidden by CSS while body[data-mode="landing"].
+    Once a mode is chosen the shell shows, but the two control groups inside the
+    header (#offline-controls and the live-injected controls) are themselves
+    gated on the active mode.
+  -->
+  <header id="topbar">
+    <h1>Cloud WAN Core Network Policy Visualizer</h1>
+
+    <!--
+      OFFLINE-ONLY controls: policy loading (example / open / paste). CSS hides
+      this whole group unless body[data-mode="offline"], so a LIVE user can
+      never see "Open .json..." or "Paste JSON". The AWS/live controls are
+      injected by live.js into #live-controls below and are hidden in offline.
+    -->
+    <div id="offline-controls" class="mode-controls">
+      <button id="btn-example" type="button">Load example</button>
+      <label class="file-btn">
+        Open .json&hellip;
+        <input id="file-input" type="file" accept=".json,application/json" hidden />
+      </label>
+      <button id="btn-paste" type="button">Paste JSON&hellip;</button>
+    </div>
+
+    <!--
+      LIVE-ONLY controls: live.js injects the AWS profile/region/core-network
+      pickers + Fetch buttons and the READ-ONLY badge in here. CSS hides this
+      whole group unless body[data-mode="live"]. Empty in the web build.
+    -->
+    <div id="live-controls" class="mode-controls"></div>
+
+    <!--
+      SHARED analysis controls (both modes): the attachment simulator and the
+      reachability checker operate on whatever policy is loaded, live or offline.
+    -->
+    <div id="shared-controls">
+      <button id="btn-simulate" type="button">Simulate attachment&hellip;</button>
+      <button id="btn-reach" type="button">Check reachability&hellip;</button>
+    </div>
+
+    <!-- Return to the landing screen to switch Offline<->Live without relaunch. -->
+    <button id="btn-change-mode" type="button">Change mode</button>
+  </header>
+
+  <!-- Paste panel: hidden until "Paste JSON..." is clicked -->
+  <section id="paste-panel" hidden>
+    <textarea id="paste-area" placeholder="Paste a Cloud WAN core network policy document (JSON) here"></textarea>
+    <div class="paste-actions">
+      <button id="btn-render" type="button">Render</button>
+      <button id="btn-paste-cancel" type="button">Cancel</button>
+    </div>
+  </section>
+
+  <!-- Header info strip: ASN ranges, ECMP, edge-location count -->
+  <div id="info-strip" hidden></div>
+
+  <!--
+    Attachment simulator panel: hidden until "Simulate attachment..." is clicked.
+    A pure what-if form -- the values are evaluated CLIENT-SIDE against the
+    loaded policy by parser.simulateAttachment. Nothing is sent anywhere and no
+    AWS resource is created. Region is a free-text field (datalist offers the
+    policy's edge-locations as suggestions but does not restrict input).
+  -->
+  <section id="sim-panel" hidden>
+    <div class="sim-grid">
+      <label>Attachment type
+        <select id="sim-type">
+          <option value="vpc">vpc</option>
+          <option value="site-to-site-vpn">site-to-site-vpn</option>
+          <option value="connect">connect</option>
+          <option value="transit-gateway-route-table">transit-gateway-route-table</option>
+        </select>
+      </label>
+      <label>Region
+        <input id="sim-region" type="text" list="sim-region-options" placeholder="us-east-1" />
+        <datalist id="sim-region-options"></datalist>
+      </label>
+      <label>Account ID
+        <input id="sim-account" type="text" inputmode="numeric" placeholder="111122223333" />
+      </label>
+      <label>Resource ID <span class="opt">(optional)</span>
+        <input id="sim-resource" type="text" placeholder="vpc-0123456789abcdef0" />
+      </label>
+      <label>CIDR <span class="opt">(optional, display only)</span>
+        <input id="sim-cidr" type="text" placeholder="10.0.0.0/16" />
+      </label>
+    </div>
+
+    <div class="sim-tags">
+      <div class="sim-tags-head">
+        <strong>Attachment tags</strong>
+        <button id="btn-sim-add-tag" type="button" class="mini">+ Add tag</button>
+      </div>
+      <div id="sim-tag-rows"></div>
+    </div>
+
+    <div class="sim-actions">
+      <button id="btn-sim-run" type="button">Simulate</button>
+      <button id="btn-sim-clear" type="button">Clear simulation</button>
+      <button id="btn-sim-close" type="button">Close</button>
+    </div>
+
+    <!-- Result + expandable trace, built with createElement/textContent only -->
+    <div id="sim-result" hidden></div>
+  </section>
+
+  <!--
+    Reachability / path checker panel: hidden until "Check reachability..." is
+    clicked. A pure POLICY-INTENT what-if -- source + destination are evaluated
+    CLIENT-SIDE against the loaded policy by parser.checkReachability. In the
+    native app's "Live view" mode, if a deployed route table has been
+    fetched (live.js -> get-network-routes), a second clearly-labelled
+    DEPLOYED-ROUTES verdict is shown beneath POLICY INTENT. Destination includes
+    an "Internet" option for egress checks.
+  -->
+  <section id="reach-panel" hidden>
+    <div class="reach-grid">
+      <label>Source segment
+        <select id="reach-source"></select>
+      </label>
+      <label>Destination
+        <select id="reach-dest"></select>
+      </label>
+    </div>
+    <div class="reach-actions">
+      <button id="btn-reach-run" type="button">Check path</button>
+      <button id="btn-reach-clear" type="button">Clear path</button>
+      <button id="btn-reach-close" type="button">Close</button>
+    </div>
+    <!-- Verdict + ordered hop list, built with createElement/textContent only -->
+    <div id="reach-result" hidden></div>
+  </section>
+
+  <!-- Non-throwing, friendly error banner -->
+  <div id="error-banner" role="alert" hidden></div>
+
+  <main>
+    <div id="cy"></div>
+
+    <!-- Side panel: details for a clicked segment -->
+    <aside id="side-panel" hidden>
+      <button id="side-close" type="button" aria-label="Close panel">&times;</button>
+      <div id="side-content"></div>
+    </aside>
+
+    <!-- Legend -->
+    <div id="legend">
+      <strong>Legend</strong>
+      <div class="legend-row"><span class="swatch region"></span> Region column (edge location)</div>
+      <div class="legend-row"><span class="swatch seg"></span> Segment lane</div>
+      <div class="legend-row"><span class="swatch nfg"></span> Network function group (inspection)</div>
+      <hr />
+      <div class="legend-row"><span class="line share"></span> Share (bidirectional)</div>
+      <div class="legend-row"><span class="line leak"></span> One-way leak</div>
+      <div class="legend-row"><span class="line inspection"></span> Inspection path (via NFG)</div>
+      <div class="legend-hint">Click a segment lane to reveal its routing, or a region column to filter. Click empty space to reset. Scroll to zoom, drag the background to pan.</div>
+    </div>
+  </main>
+
+  <!-- app.js wires the UI to the parser + renderer (ES module) -->
+  <script type="module" src="app.js"></script>
+
+  <!--
+    NATIVE-APP BUILD ONLY: native.js upgrades "Open .json..." to the macOS file
+    dialog when running inside the Tauri shell. Loaded AFTER app.js so the shared
+    parse entry point exists; a no-op in a plain browser.
+  -->
+  <script type="module" src="native.js"></script>
+
+  <!--
+    NATIVE-APP LIVE MODE ONLY: live.js adds the "Live view" controls -- the
+    READ-ONLY badge and a form that runs ONLY the read-only Tauri AWS commands
+    (list_profiles / list_core_networks / get_live_policy / get_live_routes) to
+    fetch a deployed policy + route table. It injects into #live-controls and is
+    driven by the shared setMode() (window.__onEnterLive / __onLeaveLive hooks).
+    Loaded AFTER app.js so the window.__visualize / __setLiveRoutes hooks exist;
+    a no-op in a plain browser. All AWS traffic goes through the Rust CLI layer,
+    never the webview.
+  -->
+  <script type="module" src="live.js"></script>
+</body>
+</html>

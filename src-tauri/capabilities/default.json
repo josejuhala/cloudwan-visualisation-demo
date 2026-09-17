@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least-privilege capability set for the Cloud WAN Policy Visualizer. Grants ONLY: (1) the native file-open dialog, and (2) reading the text of a file the user explicitly picked in that dialog. No shell, no network/http, no filesystem WRITE, no directory scopes, no other plugin.",
+  "windows": ["main"],
+  "permissions": [
+    {
+      "//": "Open the native macOS file-open panel. This does not, by itself, grant any filesystem access -- it only returns the path the user chose.",
+      "identifier": "dialog:allow-open"
+    },
+    {
+      "//": "Read the TEXT of the file the user just selected. Scoped to $FILE, the sentinel for a path returned by the dialog: it does NOT grant reading arbitrary paths, only the one the user actively picked. No write permission is present anywhere in this file.",
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "$FILE" }]
+    }
+  ]
+}

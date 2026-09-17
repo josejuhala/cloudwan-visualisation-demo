@@ -1,0 +1,98 @@
+{
+  "version": "2021.12",
+  "core-network-configuration": {
+    "vpn-ecmp-support": true,
+    "asn-ranges": ["64512-65534"],
+    "edge-locations": [
+      { "location": "eu-west-1", "asn": 64512 },
+      { "location": "us-east-1", "asn": 64513 }
+    ]
+  },
+  "segments": [
+    {
+      "name": "production",
+      "description": "Production workloads across both regions.",
+      "require-attachment-acceptance": true,
+      "isolate-attachments": true,
+      "edge-locations": ["eu-west-1", "us-east-1"]
+    },
+    {
+      "name": "development",
+      "description": "Development and test workloads.",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": false,
+      "edge-locations": ["us-east-1"]
+    },
+    {
+      "name": "shared-services",
+      "description": "Shared platform services (DNS, AD, logging) reachable from every segment.",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": false
+    },
+    {
+      "name": "security",
+      "description": "Centralized inspection and egress. Reachable from prod and dev.",
+      "require-attachment-acceptance": true,
+      "isolate-attachments": true,
+      "edge-locations": ["eu-west-1", "us-east-1"]
+    }
+  ],
+  "segment-actions": [
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "shared-services",
+      "share-with": "*"
+    },
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "security",
+      "share-with": ["production", "development"]
+    },
+    {
+      "action": "create-route",
+      "segment": "security",
+      "destination-cidr-blocks": ["0.0.0.0/0"],
+      "destinations": ["inspection-vpc-egress"]
+    }
+  ],
+  "attachment-policies": [
+    {
+      "rule-number": 100,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "attachment-type", "operator": "equals", "value": "vpc" },
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "prod" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "production",
+        "require-acceptance-tag-value": "true"
+      }
+    },
+    {
+      "rule-number": 200,
+      "condition-logic": "or",
+      "conditions": [
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "dev" },
+        { "type": "region", "operator": "equals", "value": "us-east-1" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "development"
+      }
+    },
+    {
+      "rule-number": 300,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "tag-value", "operator": "equals", "key": "tier", "value": "shared" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "shared-services"
+      }
+    }
+  ]
+}

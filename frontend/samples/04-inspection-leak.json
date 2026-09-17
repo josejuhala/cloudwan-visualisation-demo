@@ -1,0 +1,110 @@
+{
+  "version": "2021.12",
+  "core-network-configuration": {
+    "vpn-ecmp-support": true,
+    "asn-ranges": ["64512-65534"],
+    "edge-locations": [
+      { "location": "eu-west-1", "asn": 64512 },
+      { "location": "us-east-1", "asn": 64513 }
+    ]
+  },
+  "network-function-groups": [
+    {
+      "name": "inspection-vpc",
+      "description": "Centralized firewall / inspection appliances for east-west and egress traffic.",
+      "require-attachment-acceptance": true
+    }
+  ],
+  "segments": [
+    {
+      "name": "prod",
+      "description": "Production workloads. Traffic to dev is steered through inspection.",
+      "require-attachment-acceptance": true,
+      "isolate-attachments": true,
+      "edge-locations": ["eu-west-1", "us-east-1"]
+    },
+    {
+      "name": "dev",
+      "description": "Development workloads. May reach shared-services but shared-services does not reach back.",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": false,
+      "edge-locations": ["us-east-1"]
+    },
+    {
+      "name": "shared-services",
+      "description": "Shared platform services. Intentionally does NOT list dev in its share-with (one-way leak in).",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": false
+    }
+  ],
+  "segment-actions": [
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "dev",
+      "share-with": ["shared-services"]
+    },
+    {
+      "action": "send-via",
+      "segment": "prod",
+      "mode": "single-hop",
+      "when-sent-to": {
+        "segments": ["dev"]
+      },
+      "via": {
+        "network-function-groups": ["inspection-vpc"]
+      }
+    },
+    {
+      "action": "send-to",
+      "segment": "prod",
+      "via": {
+        "network-function-groups": ["inspection-vpc"]
+      }
+    },
+    {
+      "action": "create-route",
+      "segment": "prod",
+      "destination-cidr-blocks": ["0.0.0.0/0"],
+      "description": "Default egress route through inspection."
+    }
+  ],
+  "attachment-policies": [
+    {
+      "rule-number": 100,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "prod" },
+        { "type": "account-id", "operator": "equals", "value": "111122223333" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "prod",
+        "require-acceptance-tag-value": "true"
+      }
+    },
+    {
+      "rule-number": 200,
+      "condition-logic": "or",
+      "conditions": [
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "dev" },
+        { "type": "region", "operator": "equals", "value": "us-east-1" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "dev"
+      }
+    },
+    {
+      "rule-number": 300,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "tag-exists", "key": "Location" }
+      ],
+      "action": {
+        "add-to-network-function-group": "inspection-vpc",
+        "require-acceptance": true
+      }
+    }
+  ]
+}

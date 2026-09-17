@@ -1,0 +1,179 @@
+{
+  "version": "2021.12",
+  "core-network-configuration": {
+    "vpn-ecmp-support": true,
+    "asn-ranges": ["64512-65534"],
+    "edge-locations": [
+      { "location": "eu-west-1", "asn": 64512 },
+      { "location": "us-east-1", "asn": 64513 },
+      { "location": "ap-southeast-1", "asn": 64514 },
+      { "location": "us-west-2", "asn": 64515 }
+    ]
+  },
+  "segments": [
+    {
+      "name": "prod",
+      "description": "Production workloads. Global, spans all regions.",
+      "require-attachment-acceptance": true,
+      "isolate-attachments": true
+    },
+    {
+      "name": "dev",
+      "description": "Development workloads, US regions only.",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": false,
+      "edge-locations": ["us-east-1", "us-west-2"]
+    },
+    {
+      "name": "staging",
+      "description": "Pre-production staging, mirrors prod in eu-west-1 and us-east-1.",
+      "require-attachment-acceptance": true,
+      "isolate-attachments": true,
+      "edge-locations": ["eu-west-1", "us-east-1"]
+    },
+    {
+      "name": "shared-services",
+      "description": "Shared platform services (DNS, AD, logging). Reachable from every segment.",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": false
+    },
+    {
+      "name": "security",
+      "description": "Centralized inspection and egress. Global.",
+      "require-attachment-acceptance": true,
+      "isolate-attachments": true
+    },
+    {
+      "name": "sandbox",
+      "description": "Experimental sandbox, ap-southeast-1 only, fully isolated.",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": true,
+      "edge-locations": ["ap-southeast-1"]
+    },
+    {
+      "name": "partner-connectivity",
+      "description": "Third-party partner attachments. Reaches only shared-services and security.",
+      "require-attachment-acceptance": true,
+      "isolate-attachments": true,
+      "edge-locations": ["eu-west-1", "us-east-1"]
+    }
+  ],
+  "segment-actions": [
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "shared-services",
+      "share-with": "*"
+    },
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "security",
+      "share-with": ["prod", "dev", "staging", "partner-connectivity"]
+    },
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "prod",
+      "share-with": ["staging"]
+    },
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "partner-connectivity",
+      "share-with": ["shared-services"]
+    },
+    {
+      "action": "create-route",
+      "segment": "security",
+      "destination-cidr-blocks": ["0.0.0.0/0"],
+      "destinations": ["inspection-vpc-egress"]
+    },
+    {
+      "action": "create-route",
+      "segment": "prod",
+      "destination-cidr-blocks": ["10.0.0.0/8"],
+      "destinations": ["inspection-vpc"]
+    },
+    {
+      "action": "create-route",
+      "segment": "partner-connectivity",
+      "destination-cidr-blocks": ["100.64.0.0/16"],
+      "destinations": ["partner-gateway"]
+    }
+  ],
+  "attachment-policies": [
+    {
+      "rule-number": 100,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "attachment-type", "operator": "equals", "value": "vpc" },
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "prod" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "prod",
+        "require-acceptance-tag-value": "true"
+      }
+    },
+    {
+      "rule-number": 200,
+      "condition-logic": "or",
+      "conditions": [
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "dev" },
+        { "type": "region", "operator": "equals", "value": "us-west-2" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "dev"
+      }
+    },
+    {
+      "rule-number": 300,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "tag-value", "operator": "equals", "key": "env", "value": "staging" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "staging"
+      }
+    },
+    {
+      "rule-number": 400,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "account-id", "operator": "equals", "value": "111122223333" },
+        { "type": "tag-value", "operator": "equals", "key": "team", "value": "platform" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "shared-services"
+      }
+    },
+    {
+      "rule-number": 500,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "account-id", "operator": "equals", "value": "222233334444" },
+        { "type": "attachment-type", "operator": "equals", "value": "connect" }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "partner-connectivity",
+        "require-acceptance-tag-value": "true"
+      }
+    },
+    {
+      "rule-number": 600,
+      "condition-logic": "or",
+      "conditions": [
+        { "type": "tag-exists", "key": "segment" }
+      ],
+      "action": {
+        "association-method": "tag",
+        "segment": "segment"
+      }
+    }
+  ]
+}

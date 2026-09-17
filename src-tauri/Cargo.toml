@@ -1,0 +1,47 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License").
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+[package]
+name = "cloudwan-policy-viz-app"
+version = "0.1.0"
+description = "Native macOS wrapper for the AWS Cloud WAN policy visualizer"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# Tauri v2 builds the app logic as a library so the same code can be reused
+# across desktop and (future) mobile targets. The binary below is a thin shim.
+name = "cloudwan_policy_viz_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+# Exact versions are pinned in Cargo.lock (committed). The ranges below track
+# the Tauri v2 line; `cargo build` resolves and locks the concrete patch.
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Least-privilege plugins: ONLY the native file dialog and filesystem read.
+# No shell, no http, no notification, no other capability is pulled in.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+# serde is used ONLY to make the read-only AWS commands' error type
+# serializable so Tauri can hand a friendly message to the frontend. No shell
+# plugin is added -- the AWS CLI is spawned inside Rust commands, so the webview
+# has no invokable shell surface at all.
+serde = { version = "1", features = ["derive"] }
+# serde_json is serde's SERIALIZATION companion, NOT a network client. Used to
+# build the --route-table-identifier JSON for get-network-routes with guaranteed
+# correct escaping (defense in depth) instead of hand-interpolating a string.
+serde_json = "1"
