@@ -1,4 +1,4 @@
-# Cloud WAN Policy Visualizer — native macOS app (Tauri v2)
+# Demo Cloud WAN Policy Visualizer — native macOS app (Tauri v2) - Not production grade
 
 A double-clickable, **fully offline** macOS wrapper around the existing client-side
 Cloud WAN policy visualizer. It is **packaging, not a rewrite**: the web PoC in
@@ -33,8 +33,7 @@ mode (the web build stays simulation-only).
 >
 > **Not an AWS product.** This is a personal project. It is **not** an official
 > Amazon or AWS product, and is **not endorsed by, sponsored by, or affiliated
-> with** Amazon Web Services. Although the author works at AWS, this is a personal
-> publication and any views or output are the author's own.
+> with** Amazon Web Services.
 >
 > **Provided "AS IS".** The software is provided *"AS IS"*, without warranty of any
 > kind, express or implied. See [License](#license).
